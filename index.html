@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dino Game</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%; /* Body와 HTML 요소의 높이를 100%로 설정하여 전체 화면을 채웁니다. */
+        }
+        canvas {
+            display: block;
+            background-image: url('main.png');
+            background-size: cover; /* 배경 이미지가 화면을 완전히 채우도록 설정합니다. */
+            background-repeat: no-repeat;
+            width: 100%; /* Canvas 요소의 너비를 100%로 설정하여 화면 전체를 채우도록 합니다. */
+            height: 100%; /* Canvas 요소의 높이도 화면 전체를 채우도록 설정합니다. */
+        }
+        #info {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 30px;
+            color: black;
+            text-shadow: 1px 1px 2px black;
+        }
+		#best {
+            position: absolute;
+            top: 50px;
+            left: 90%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 15px;
+            color: black;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="info"></div>
+	<div id="best"></div>
+	<div id="gameOver" style="display: none;">
+		<div style="position: absolute; top: 33%; left: 55%; transform: translate(-50%, -50%); text-align: center;">
+			<span style="font-size: 40px; color: black; font-weight: bold;"><span id="currentScore"></span></span>
+
+		</div>
+	</div>
+	<audio id="startSound" src="start.wav"></audio>
+	<audio id="jumpSound" src="jump.wav"></audio>
+	<audio id="hitSound" src="hit.wav"></audio>
+	<audio id="defeatSound" src="defeat.wav"></audio>
+	
+
+    <script>
+        let gameStarted = false; // 게임 시작 여부를 나타내는 변수
+		let gameDefeat = false; // 게임 패배 화면임을 나타내는 변수
+		let bestScore = 0;
+        let score = 0;
+		let lives = 5;
+		let count = 0;
+		let retry = 0;
+
+	// ★ 브라우저의 크기에 맞춰 동적 변화
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Canvas 크기를 브라우저 창의 크기에 맞추는 함수
+        function resizeCanvas() {
+            canvas.width = window.innerWidth; // 브라우저 창의 너비를 Canvas의 너비로 설정합니다.
+            canvas.height = window.innerHeight; // 브라우저 창의 높이를 Canvas의 높이로 설정합니다.
+            if (!gameStarted) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Canvas를 지워 바닥을 숨깁니다.
+            }
+        }
+
+        // 화면 크기가 변경될 때 Canvas 크기를 조절합니다.
+        window.addEventListener('resize', function() {
+            resizeCanvas();
+        });
+
+        // 초기 화면 로딩 시 Canvas 크기를 조절합니다.
+        resizeCanvas();
+
+	// ★ 3요소. 바닥 공룡 선인장
+		// 바닥
+		const groundY = window.innerHeight * 0.8;
+        function drawGround() {
+            const groundHeight = window.innerHeight - groundY;
+            ctx.fillStyle = 'black'; // 검은색으로 바닥을 칠합니다.
+            ctx.fillRect(0, groundY, canvas.width, groundHeight); // 바닥을 그립니다.
+        }
+
+        // 공룡
+        const dinoImg1 = new Image();
+        dinoImg1.src = 'character1.png';
+        const dinoImg2 = new Image();
+        dinoImg2.src = 'character2.png';
+		const dinoWidth = 150;
+		const dinoHeight = 293;
+
+		const dinoX = 50;
+        let dinoY = groundY;
+		const maxJumpHeight = 260; // 최대 점프 높이
+		let dinoJump = false;
+		const jumpSpeed = 35;
+		let dinoJumpSpeed = 0;
+		const fallSpeed = 3;
+		let dinoFall = false;
+		let dinoFallSpeed = 0;
+
+        function drawDino() {
+            let dinoImg;
+			let cool = 500;
+			if(150 < count) cool =200;
+			else if(100 < count) cool =300;
+			else if(50 < count) cool = 400;
+            if (Math.floor(Date.now() / cool) % 2 === 0) {
+                dinoImg = dinoImg1;
+            } else {
+                dinoImg = dinoImg2;
+            }
+            ctx.drawImage(dinoImg, dinoX, dinoY - dinoImg.height);
+        }
+
+		function JumpDino() {
+			// 디노 점프
+            if (dinoJump) {
+				if(dinoJumpSpeed == 0) dinoJumpSpeed = jumpSpeed; // 점프 시작
+                if (dinoY > groundY - maxJumpHeight) { // 점프 속도 점차 감소
+                    dinoY -= dinoJumpSpeed;
+					if(2 < dinoJumpSpeed) {
+						dinoJumpSpeed *= 0.88;
+					}
+					if(dinoY <= groundY - maxJumpHeight) { // 최대 높이를 뚫지 않도록
+						dinoY = groundY - maxJumpHeight;
+					}
+
+                } else { // 점프 상태 종료
+                    dinoJump = false;
+					dinoFall = true;
+                    dinoFallSpeed = 0;
+                }
+
+			// 디노 떨어짐
+            } else if(dinoFall) {
+				if(dinoFallSpeed == 0) dinoFallSpeed = fallSpeed; // 떨어짐 시작
+                if (dinoY < groundY) { // 떨어짐 속도 점차 증가
+                    dinoY += dinoFallSpeed;
+					dinoFallSpeed *= 1.13;
+					if(dinoY >= groundY) { // 바닥을 뚫지 않도록
+						dinoY = groundY;
+					}
+                    
+                } else { // 떨어짐 상태 종료
+					dinoFall = false;
+                    dinoJumpSpeed = 0;
+                }
+            }
+		}
+
+		// 선인장
+		let hurdles = [];
+		let hurdleSpeed = 14;
+		let hurdleIntervalMain = 1000;
+		let hurdleInterval = 1111;
+        // 선인장 객체 생성 함수
+		function createHurdle() {
+			const hurdleSample = [
+				{ img: 'hurdle1.png', width: 92, height: 62 },
+				{ img: 'hurdle2.png', width: 100, height: 122 },
+				{ img: 'hurdle3.png', width: 100, height: 181 }
+			];
+			const number = Math.floor(Math.random() * hurdleSample.length);
+			if(hurdleIntervalMain < 666) hurdleIntervalMain = 666;
+			if(number == 0) hurdleInterval = hurdleIntervalMain / 1.4;
+			else if(number == 1) hurdleInterval = hurdleIntervalMain / 1.15;
+			else if(number == 2) hurdleInterval = hurdleIntervalMain / 0.9;
+			const randomHurdle = hurdleSample[number];
+			const hurdle = {
+				img: randomHurdle.img,
+				width: randomHurdle.width,
+				height: randomHurdle.height,
+				x: canvas.width, // 오른쪽 끝에서 시작
+				y: groundY - randomHurdle.height // 바닥 위에 배치
+			};
+			hurdles.push(hurdle);
+		}
+
+		// 선인장 그리기 함수
+		function drawHurdles() {
+			for (let i = 0; i < hurdles.length; i++) {
+				const hurdle = hurdles[i];
+				const hurdleImg = new Image();
+				hurdleImg.src = hurdle.img;
+				ctx.drawImage(hurdleImg, hurdle.x, hurdle.y, hurdle.width, hurdle.height);
+			}
+		}
+
+		// 선인장 제거, 점수 획득 함수
+		function deleteHurdles() {
+			for (let i = 0; i < hurdles.length; i++) {
+				const hurdle = hurdles[i];
+				if(hurdle.x < -50) {
+					// 공룡이 어떤 선인장을 통과했는지에 따라 점수를 증가시킵니다.
+					if (hurdle.img === 'hurdle1.png') {
+						score += 100 + count; // hurdle1.png 선인장을 통과한 경우 100점을 추가합니다.
+					} else if (hurdle.img === 'hurdle2.png') {
+						score += 150 + count; // hurdle2.png 선인장을 통과한 경우 150점을 추가합니다.
+					} else if (hurdle.img === 'hurdle3.png') {
+						score += 200 + count; // hurdle3.png 선인장을 통과한 경우 200점을 추가합니다.
+					}
+					hurdles.shift();
+					count++;
+					hurdleIntervalMain -= 3;
+				}
+			}
+		}
+
+		// 선인장 이동 함수
+		function moveHurdles() {
+			if(150 < count) hurdleSpeed = 23;
+			else if(100 < count) hurdleSpeed = 20;
+			else if(50 < count) hurdleSpeed = 17;
+			for (let i = 0; i < hurdles.length; i++) {
+				hurdles[i].x -= hurdleSpeed; // 왼쪽으로 이동
+			}
+		}
+
+		// 선인장 충돌 감지 함수
+        function checkCollision() {
+            for (let i = 0; i < hurdles.length; i++) {
+				const hurdle = hurdles[i];
+
+				// 선인장의 좌표와 크기
+				const hurdleX = hurdle.x;
+				const hurdleY = hurdle.y;
+				const hurdleWidth = hurdle.width;
+				const hurdleHeight = hurdle.height;
+
+				// 선인장과 공룡의 충돌 여부를 감지하는 조건문
+				const bonus = 10; // 사각형 충돌 판정이니 판정범위 좀더 여유롭게 해주기
+				let bonus2 = 10;
+				if(hurdleHeight == 181) bonus2 = 30; // 3단 장애물은 오른쪽 위 판정 좀더 여유롭게
+				if (
+					dinoX < hurdleX + hurdleWidth - bonus2 && // 오른쪽 판정
+					dinoX + dinoWidth > hurdleX + bonus && // 왼쪽 판정
+					dinoY <= hurdleY + hurdleHeight && // 아래 판정
+					dinoY - bonus >  hurdleY // 위 판정
+				) {
+					// 충돌 발생!
+					hurdles.shift();
+					lives--;
+
+					// 생명이 0이 되면 게임 오버 처리
+					if (lives === 0) {
+						gameStarted = false;
+						gameDefeat = true;
+						retry++;
+
+						ctx.clearRect(0, 0, canvas.width, canvas.height); // 그림을 제거합니다.
+						document.getElementById('info').style.display = 'none'; // 텍스트를 제거합니다.
+						canvas.style.backgroundImage = 'url("end.png")'; // end.png를 배경으로 설정합니다.
+						document.getElementById('currentScore').textContent = score;
+						document.getElementById('gameOver').style.display = 'block'; // 텍스트를 표시합니다.
+						document.getElementById('defeatSound').play();
+					} else {
+						document.getElementById('hitSound').play();
+					}
+				}
+			}
+        }
+
+	// ★ 생명과 점수 표시
+
+        // 표시된 생명과 점수를 업데이트하는 함수
+        function updateInfo() {
+			const infoElement = document.getElementById('info');
+			if(1 < lives) {
+				infoElement.innerHTML = `<span style="color: pink;">생명: ${lives}</span> <span style="color: purple;">─</span> <span style="color: blue;">점수: ${score}</span>`;
+			} else {
+				infoElement.innerHTML = `<span style="color: red;">생명: ${lives}</span> <span style="color: purple;">─</span> <span style="color: blue;">점수: ${score}</span>`;
+			}
+			if(bestScore < score) {
+				bestScore = score;
+			}
+			const bestElement = document.getElementById('best');
+			bestElement.innerHTML = `<span style="color: black;">최고 점수: ${bestScore}</span>`;
+		}
+
+
+	// ★ 키 입력 이벤트
+        window.addEventListener('keydown', function(event) {
+            if ((event.code === 'Space' || event.code === 'KeyZ')) {
+				if(gameStarted) {
+					if(dinoJump == false && dinoFall == false) {
+						dinoJump = true; // 점프 중으로 설정
+						document.getElementById('jumpSound').play();
+					}
+				} else {
+					gameStarted = true;
+					score = 0;
+					lives = 5;
+					count = 0;
+					canvas.style.backgroundImage = 'none'; // 배경 이미지를 없애고
+					document.getElementById('gameOver').style.display = 'none';
+					document.getElementById('info').style.display = 'block';
+					document.getElementById('startSound').play();
+					document.getElementById('best').style.display = 'block';
+					gameLoop(); // 게임 순환 시작
+				}
+            }
+        });
+		window.addEventListener('keyup', function(event) {
+            if ((event.code === 'Space' || event.code === 'KeyZ')) {
+				if(gameStarted) {
+					if(dinoJump == true && dinoFall == false) {
+						dinoJump = false; // 점프 중으로 설정
+						dinoFall = true;
+						dinoFallSpeed = 0;
+					}
+				}
+            }
+        });
+
+	// ★ 게임 순환
+        let lastHurdleCreationTime = 0; // 마지막 선인장 생성 시간
+
+		function gameLoop(timestamp) {
+			if (!gameStarted) return; // 게임이 종료되었으면 게임 루프를 실행하지 않음
+
+			// 경과한 시간 계산
+			const deltaTime = timestamp - lastHurdleCreationTime;
+
+			// 일정 시간이 지날 때마다 선인장 생성
+			if (deltaTime >= hurdleInterval) {
+				createHurdle();
+				lastHurdleCreationTime = timestamp;
+			}
+
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			drawGround();
+			drawDino();
+			deleteHurdles();
+			moveHurdles();
+			drawHurdles();
+			checkCollision();
+			JumpDino();
+
+			// 게임이 시작된 경우에만 정보 업데이트
+            if (gameStarted) {
+                updateInfo();
+            }
+
+			requestAnimationFrame(gameLoop);
+		}
+
+		// 첫 번째 프레임에서의 시간 설정
+		requestAnimationFrame(function(timestamp) {
+			lastHurdleCreationTime = timestamp;
+			gameLoop(timestamp);
+		});
+    </script>
+</body>
+</html>
